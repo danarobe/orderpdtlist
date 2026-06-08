@@ -30,7 +30,6 @@ exports.handler = async (event) => {
         end_date,
         limit,
         offset,
-        //order_status: 'N10', // 결제완료만 = 문제있어서 말했더니 삭제하라고해서 주석처리함
         embed: 'items'
       });
 
@@ -53,54 +52,17 @@ exports.handler = async (event) => {
       offset += limit;
     }
 
-    // ① 옵션별 집계 (상품 + 옵션 구분)
-    const byOption = {};
-    // ② 상품별 집계 (옵션 무관 전체)
-    const byProduct = {};
-
-    allOrders
-    .filter(order => order.order_status ==='N10')
-    .forEach(order => {
-        if (!order.items || order.items.length === 0) return;
-        order.items.forEach(item => {
-        const qty = Number(item.quantity);
-
-        // 옵션별
-        const optionKey = `${item.product_code}_${item.variant_code}`;
-        if (!byOption[optionKey]) {
-          byOption[optionKey] = {
-            productCode: item.product_code,
-            productName: item.product_name,
-            optionValue: item.option_value || '옵션없음',
-            totalQty: 0,
-            orderCount: 0
-          };
-        }
-        byOption[optionKey].totalQty += qty;
-        byOption[optionKey].orderCount += 1;
-
-        // 상품별 (옵션 무관)
-        const productKey = item.product_code;
-        if (!byProduct[productKey]) {
-          byProduct[productKey] = {
-            productCode: item.product_code,
-            productName: item.product_name,
-            totalQty: 0,
-            orderCount: 0
-          };
-        }
-        byProduct[productKey].totalQty += qty;
-        byProduct[productKey].orderCount += 1;
-      });
-    });
+    // 임시: 실제 status 코드 확인용
+    const statusList = [...new Set(allOrders.map(o => o.order_status))];
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         totalOrders: allOrders.length,
-        byOption: Object.values(byOption).sort((a, b) => b.totalQty - a.totalQty),
-        byProduct: Object.values(byProduct).sort((a, b) => b.totalQty - a.totalQty)
+        statusList,
+        byOption: [],
+        byProduct: []
       })
     };
 
