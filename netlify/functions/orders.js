@@ -59,7 +59,8 @@ exports.handler = async (event) => {
       order.items.forEach(item => {
         // 품목 레벨에서 결제완료(N10)만 필터
         const PAID_STATUSES = ['N10', 'N20', 'N30', 'N40', 'N41', 'N42'];
-        if (!PAID_STATUSES.includes(item.order_status)) return;
+        //아랫줄 잠시 주석처리
+        //if (!PAID_STATUSES.includes(item.order_status)) return;
 
         const qty = Number(item.quantity);
 
