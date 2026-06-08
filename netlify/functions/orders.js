@@ -30,7 +30,7 @@ exports.handler = async (event) => {
         end_date,
         limit,
         offset,
-        order_status: 'N00,N10,N20,N30'
+        order_status: 'N10' // 결제완료만
       });
 
       const res = await fetch(
@@ -48,20 +48,23 @@ exports.handler = async (event) => {
       if (!data.orders || data.orders.length === 0) break;
 
       allOrders = allOrders.concat(data.orders);
-
       if (data.orders.length < limit) break;
       offset += limit;
     }
 
-    // 품목별 수량 집계
-    const summary = {};
+    // ① 옵션별 집계 (상품 + 옵션 구분)
+    const byOption = {};
+    // ② 상품별 집계 (옵션 무관 전체)
+    const byProduct = {};
 
     allOrders.forEach(order => {
       order.items.forEach(item => {
-        const key = `${item.product_code}_${item.variant_code}`;
+        const qty = Number(item.quantity);
 
-        if (!summary[key]) {
-          summary[key] = {
+        // 옵션별
+        const optionKey = `${item.product_code}_${item.variant_code}`;
+        if (!byOption[optionKey]) {
+          byOption[optionKey] = {
             productCode: item.product_code,
             productName: item.product_name,
             optionValue: item.option_value || '옵션없음',
@@ -69,21 +72,31 @@ exports.handler = async (event) => {
             orderCount: 0
           };
         }
+        byOption[optionKey].totalQty += qty;
+        byOption[optionKey].orderCount += 1;
 
-        summary[key].totalQty += Number(item.quantity);
-        summary[key].orderCount += 1;
+        // 상품별 (옵션 무관)
+        const productKey = item.product_code;
+        if (!byProduct[productKey]) {
+          byProduct[productKey] = {
+            productCode: item.product_code,
+            productName: item.product_name,
+            totalQty: 0,
+            orderCount: 0
+          };
+        }
+        byProduct[productKey].totalQty += qty;
+        byProduct[productKey].orderCount += 1;
       });
     });
-
-    const result = Object.values(summary)
-      .sort((a, b) => b.totalQty - a.totalQty);
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         totalOrders: allOrders.length,
-        items: result
+        byOption: Object.values(byOption).sort((a, b) => b.totalQty - a.totalQty),
+        byProduct: Object.values(byProduct).sort((a, b) => b.totalQty - a.totalQty)
       })
     };
 
