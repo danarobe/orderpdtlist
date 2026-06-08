@@ -52,19 +52,19 @@ exports.handler = async (event) => {
       offset += limit;
     }
 
-    // 임시: 실제 status 코드 확인용
-    const statusList = [...new Set(allOrders.map(o => o.order_status))];
+// 임시: 첫 번째 주문 전체 구조 확인
+const firstOrder = allOrders.length > 0 ? allOrders[0] : null;
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        totalOrders: allOrders.length,
-        statusList,
-        byOption: [],
-        byProduct: []
-      })
-    };
+return {
+  statusCode: 200,
+  headers,
+  body: JSON.stringify({
+    totalOrders: allOrders.length,
+    firstOrder,
+    byOption: [],
+    byProduct: []
+  })
+};
 
   } catch (err) {
     return {
