@@ -30,7 +30,8 @@ exports.handler = async (event) => {
         end_date,
         limit,
         offset,
-        order_status: 'N10' // 결제완료만
+        order_status: 'N10', // 결제완료만
+        embed: 'items'
       });
 
       const res = await fetch(
@@ -58,6 +59,7 @@ exports.handler = async (event) => {
     const byProduct = {};
 
     allOrders.forEach(order => {
+        if (!order.items || order.items.length === 0) return;
       order.items.forEach(item => {
         const qty = Number(item.quantity);
 
