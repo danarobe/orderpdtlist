@@ -44,27 +44,62 @@ exports.handler = async (event) => {
       );
 
       const data = await res.json();
-
       if (!data.orders || data.orders.length === 0) break;
-
       allOrders = allOrders.concat(data.orders);
       if (data.orders.length < limit) break;
       offset += limit;
     }
 
-// 임시: 첫 번째 주문 전체 구조 확인
-const firstOrder = allOrders.length > 0 ? allOrders[0] : null;
+    const byOption = {};
+    const byProduct = {};
 
-return {
-  statusCode: 200,
-  headers,
-  body: JSON.stringify({
-    totalOrders: allOrders.length,
-    firstOrder,
-    byOption: [],
-    byProduct: []
-  })
-};
+    allOrders.forEach(order => {
+      if (!order.items || order.items.length === 0) return;
+
+      order.items.forEach(item => {
+        // 품목 레벨에서 결제완료(N10)만 필터
+        if (item.order_status !== 'N10') return;
+
+        const qty = Number(item.quantity);
+
+        // 옵션별 집계
+        const optionKey = `${item.product_code}_${item.variant_code}`;
+        if (!byOption[optionKey]) {
+          byOption[optionKey] = {
+            productCode: item.product_code,
+            productName: item.product_name,
+            optionValue: item.option_value || '옵션없음',
+            totalQty: 0,
+            orderCount: 0
+          };
+        }
+        byOption[optionKey].totalQty += qty;
+        byOption[optionKey].orderCount += 1;
+
+        // 상품별 집계 (옵션 합산)
+        const productKey = item.product_code;
+        if (!byProduct[productKey]) {
+          byProduct[productKey] = {
+            productCode: item.product_code,
+            productName: item.product_name,
+            totalQty: 0,
+            orderCount: 0
+          };
+        }
+        byProduct[productKey].totalQty += qty;
+        byProduct[productKey].orderCount += 1;
+      });
+    });
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        totalOrders: allOrders.length,
+        byOption: Object.values(byOption).sort((a, b) => b.totalQty - a.totalQty),
+        byProduct: Object.values(byProduct).sort((a, b) => b.totalQty - a.totalQty)
+      })
+    };
 
   } catch (err) {
     return {
