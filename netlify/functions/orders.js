@@ -30,7 +30,7 @@ exports.handler = async (event) => {
         end_date,
         limit,
         offset,
-        order_status: 'N10', // 결제완료만
+        //order_status: 'N10', // 결제완료만 = 문제있어서 말했더니 삭제하라고해서 주석처리함
         embed: 'items'
       });
 
@@ -58,9 +58,11 @@ exports.handler = async (event) => {
     // ② 상품별 집계 (옵션 무관 전체)
     const byProduct = {};
 
-    allOrders.forEach(order => {
+    allOrders
+    .filter(order => order.order_status ==='N10')
+    .forEach(order => {
         if (!order.items || order.items.length === 0) return;
-      order.items.forEach(item => {
+        order.items.forEach(item => {
         const qty = Number(item.quantity);
 
         // 옵션별
