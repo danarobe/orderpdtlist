@@ -222,3 +222,27 @@ export default function App() {
                 {result.byProduct.map((item, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: i % 2 === 0 ? 'white' : '#f9fafb' }}>
                     <td style={tdStyle}>{i + 1}</td>
+                    <td style={tdStyle}>{item.productName}</td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>{item.orderCount}건</td>
+                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{item.totalQty}개</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const thStyle = {
+  padding: '10px 14px',
+  textAlign: 'left',
+  fontWeight: 'bold',
+  borderBottom: '2px solid #cbd5e1'
+};
+
+const tdStyle = {
+  padding: '10px 14px'
+};
