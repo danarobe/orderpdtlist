@@ -11,16 +11,15 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [viewMode, setViewMode] = useState('option'); // 'option' | 'product'
+  const [viewMode, setViewMode] = useState('option');
+  const [progress, setProgress] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const accessToken = params.get('access_token');
     const refreshToken = params.get('refresh_token');
     const errorMsg = params.get('error');
-
     if (errorMsg) setError('로그인 실패: ' + errorMsg);
-
     if (accessToken) {
       localStorage.setItem('access_token', accessToken);
       localStorage.setItem('refresh_token', refreshToken);
@@ -37,8 +36,7 @@ export default function App() {
       scope: 'mall.read_order',
       state: Math.random().toString(36).slice(2)
     });
-    window.location.href =
-      `https://${MALL_ID}.cafe24api.com/api/v2/oauth/authorize?${params}`;
+    window.location.href = `https://${MALL_ID}.cafe24api.com/api/v2/oauth/authorize?${params}`;
   };
 
   const handleLogout = () => {
@@ -55,23 +53,77 @@ export default function App() {
     }
     setLoading(true);
     setError(null);
+    setResult(null);
+    setProgress('');
 
     try {
-      const params = new URLSearchParams({
-        start_date: startDate,
-        end_date: endDate,
-        access_token: token
+      // 날짜 범위를 3일씩 분할
+      const chunks = [];
+      let current = new Date(startDate);
+      const end = new Date(endDate);
+
+      while (current <= end) {
+        const chunkStart = current.toISOString().slice(0, 10);
+        const chunkEnd = new Date(Math.min(
+          new Date(current.getTime() + 2 * 24 * 60 * 60 * 1000),
+          end
+        )).toISOString().slice(0, 10);
+        chunks.push({ start: chunkStart, end: chunkEnd });
+        current = new Date(current.getTime() + 3 * 24 * 60 * 60 * 1000);
+      }
+
+      const byOption = {};
+      const byProduct = {};
+      let totalOrders = 0;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        setProgress(`조회 중... (${i + 1}/${chunks.length} 구간)`);
+
+        const params = new URLSearchParams({
+          start_date: chunk.start,
+          end_date: chunk.end,
+          access_token: token
+        });
+
+        const res = await fetch(`/api/orders?${params}`);
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        totalOrders += data.totalOrders || 0;
+
+        (data.byOption || []).forEach(item => {
+          const key = `${item.productCode}_${item.optionValue}`;
+          if (!byOption[key]) {
+            byOption[key] = { ...item, totalQty: 0, orderCount: 0 };
+          }
+          byOption[key].totalQty += item.totalQty;
+          byOption[key].orderCount += item.orderCount;
+        });
+
+        (data.byProduct || []).forEach(item => {
+          const key = item.productCode;
+          if (!byProduct[key]) {
+            byProduct[key] = { ...item, totalQty: 0, orderCount: 0 };
+          }
+          byProduct[key].totalQty += item.totalQty;
+          byProduct[key].orderCount += item.orderCount;
+        });
+      }
+
+      setProgress('');
+      setResult({
+        totalOrders,
+        byOption: Object.values(byOption).sort((a, b) => b.totalQty - a.totalQty),
+        byProduct: Object.values(byProduct).sort((a, b) => b.totalQty - a.totalQty)
       });
 
-      const res = await fetch(`/api/orders?${params}`);
-      const data = await res.json();
-
-      if (data.error) throw new Error(data.error);
-      setResult(data);
     } catch (err) {
       setError('조회 실패: ' + err.message);
     } finally {
       setLoading(false);
+      setProgress('');
     }
   };
 
@@ -89,8 +141,6 @@ export default function App() {
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: 32 }}>
-
-      {/* 헤더 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h2 style={{ fontSize: 22, fontWeight: 'bold' }}>📦 주문 품목 수량 집계 (결제완료)</h2>
         <button onClick={handleLogout} style={{ padding: '8px 16px', fontSize: 14, backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
@@ -98,7 +148,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* 날짜 입력 */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
         <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
           style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }} />
@@ -106,44 +155,34 @@ export default function App() {
         <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
           style={{ padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }} />
         <button onClick={fetchOrders} disabled={loading}
-          style={{ padding: '8px 24px', fontSize: 15, backgroundColor: loading ? '#93c5fd' : '#2563eb', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+          style={{ padding: '8px 24px', fontSize: 15, backgroundColor: loading ? '#93c5fd' : '#2563eb', color: 'white', border: 'none', borderRadius: 6, cursor: loading ? 'not-allowed' : 'pointer' }}>
           {loading ? '조회 중...' : '집계하기'}
         </button>
       </div>
 
+      {progress && (
+        <p style={{ color: '#2563eb', marginBottom: 16, fontWeight: 'bold' }}>{progress}</p>
+      )}
+
       {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
 
-      {/* 결과 */}
       {result && (
         <div>
-          {/* 요약 */}
           <p style={{ marginBottom: 16, color: '#555' }}>
             총 주문 수: <strong>{result.totalOrders}건</strong>
           </p>
 
-          {/* 보기 모드 탭 */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 16 }}>
-            <button
-              onClick={() => setViewMode('option')}
-              style={{
-                padding: '8px 20px', fontSize: 14, cursor: 'pointer', border: '1px solid #2563eb', borderRadius: '6px 0 0 6px',
-                backgroundColor: viewMode === 'option' ? '#2563eb' : 'white',
-                color: viewMode === 'option' ? 'white' : '#2563eb'
-              }}>
+            <button onClick={() => setViewMode('option')}
+              style={{ padding: '8px 20px', fontSize: 14, cursor: 'pointer', border: '1px solid #2563eb', borderRadius: '6px 0 0 6px', backgroundColor: viewMode === 'option' ? '#2563eb' : 'white', color: viewMode === 'option' ? 'white' : '#2563eb' }}>
               옵션별 보기
             </button>
-            <button
-              onClick={() => setViewMode('product')}
-              style={{
-                padding: '8px 20px', fontSize: 14, cursor: 'pointer', border: '1px solid #2563eb', borderLeft: 'none', borderRadius: '0 6px 6px 0',
-                backgroundColor: viewMode === 'product' ? '#2563eb' : 'white',
-                color: viewMode === 'product' ? 'white' : '#2563eb'
-              }}>
+            <button onClick={() => setViewMode('product')}
+              style={{ padding: '8px 20px', fontSize: 14, cursor: 'pointer', border: '1px solid #2563eb', borderLeft: 'none', borderRadius: '0 6px 6px 0', backgroundColor: viewMode === 'product' ? '#2563eb' : 'white', color: viewMode === 'product' ? 'white' : '#2563eb' }}>
               상품별 보기 (옵션 합산)
             </button>
           </div>
 
-          {/* 옵션별 테이블 */}
           {viewMode === 'option' && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
@@ -169,7 +208,6 @@ export default function App() {
             </table>
           )}
 
-          {/* 상품별 테이블 */}
           {viewMode === 'product' && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
@@ -184,27 +222,3 @@ export default function App() {
                 {result.byProduct.map((item, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: i % 2 === 0 ? 'white' : '#f9fafb' }}>
                     <td style={tdStyle}>{i + 1}</td>
-                    <td style={tdStyle}>{item.productName}</td>
-                    <td style={{ ...tdStyle, textAlign: 'center' }}>{item.orderCount}건</td>
-                    <td style={{ ...tdStyle, textAlign: 'center', fontWeight: 'bold', color: '#2563eb' }}>{item.totalQty}개</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const thStyle = {
-  padding: '10px 14px',
-  textAlign: 'left',
-  fontWeight: 'bold',
-  borderBottom: '2px solid #cbd5e1'
-};
-
-const tdStyle = {
-  padding: '10px 14px'
-};
