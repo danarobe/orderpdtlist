@@ -20,34 +20,53 @@ exports.handler = async (event) => {
   }
 
   try {
-    let allOrders = [];
-    let offset = 0;
     const limit = 100;
 
-    while (true) {
-      const params = new URLSearchParams({
-        start_date,
-        end_date,
-        limit,
-        offset,
-        embed: 'items'
-      });
-
-      const res = await fetch(
-        `https://${mallId}.cafe24api.com/api/v2/admin/orders?${params}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${access_token}`,
-            'Content-Type': 'application/json'
-          }
+    const firstRes = await fetch(
+      `https://${mallId}.cafe24api.com/api/v2/admin/orders?` +
+      new URLSearchParams({ start_date, end_date, limit, offset: 0, embed: 'items' }),
+      {
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json'
         }
+      }
+    );
+
+    const firstData = await firstRes.json();
+
+    if (!firstData.orders) {
+      throw new Error(JSON.stringify(firstData));
+    }
+
+    const totalCount = firstData.total_count || firstData.orders.length;
+    let allOrders = [...firstData.orders];
+
+    if (totalCount > limit) {
+      const pageCount = Math.ceil(totalCount / limit);
+      const offsets = [];
+      for (let i = 1; i < pageCount; i++) {
+        offsets.push(i * limit);
+      }
+
+      const results = await Promise.all(
+        offsets.map(offset =>
+          fetch(
+            `https://${mallId}.cafe24api.com/api/v2/admin/orders?` +
+            new URLSearchParams({ start_date, end_date, limit, offset, embed: 'items' }),
+            {
+              headers: {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          ).then(r => r.json())
+        )
       );
 
-      const data = await res.json();
-      if (!data.orders || data.orders.length === 0) break;
-      allOrders = allOrders.concat(data.orders);
-      if (data.orders.length < limit) break;
-      offset += limit;
+      results.forEach(data => {
+        if (data.orders) allOrders = allOrders.concat(data.orders);
+      });
     }
 
     const byOption = {};
@@ -57,14 +76,12 @@ exports.handler = async (event) => {
       if (!order.items || order.items.length === 0) return;
 
       order.items.forEach(item => {
-        // 품목 레벨에서 결제완료(N10)만 필터
         const PAID_STATUSES = ['N10', 'N20', 'N30', 'N40', 'N41', 'N42'];
-        //아랫줄 잠시 주석처리
-        //if (!PAID_STATUSES.includes(item.order_status)) return;
+        if (!PAID_STATUSES.includes(item.order_status)) return;
+        if (item.claim_code) return;
 
         const qty = Number(item.quantity);
 
-        // 옵션별 집계
         const optionKey = `${item.product_code}_${item.variant_code}`;
         if (!byOption[optionKey]) {
           byOption[optionKey] = {
@@ -78,7 +95,6 @@ exports.handler = async (event) => {
         byOption[optionKey].totalQty += qty;
         byOption[optionKey].orderCount += 1;
 
-        // 상품별 집계 (옵션 합산)
         const productKey = item.product_code;
         if (!byProduct[productKey]) {
           byProduct[productKey] = {
